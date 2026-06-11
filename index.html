@@ -367,18 +367,14 @@ html,body{font-family:var(--font-ui);background:var(--navy);color:#fff;min-heigh
   <!-- Divider -->
   <div style="display:flex;align-items:center;gap:12px;max-width:420px;margin:20px auto 0">
     <div style="flex:1;height:1px;background:rgba(255,255,255,.08)"></div>
-    <div style="font-size:11px;color:rgba(255,255,255,.25);letter-spacing:1px">O INGRESA COMO</div>
+    <div style="font-size:11px;color:rgba(255,255,255,.25);letter-spacing:1px">PARTICIPANTES REGISTRADOS</div>
     <div style="flex:1;height:1px;background:rgba(255,255,255,.08)"></div>
   </div>
 
   <!-- Existing participants picker -->
   <div style="max-width:420px;margin:14px auto 0">
-    <div style="position:relative;margin-bottom:10px">
-      <input type="text" id="user-search" placeholder="🔍 Buscar tu nombre..." oninput="filterUserList(this.value)"
-        style="width:100%;padding:10px 14px;background:var(--navy-700);border:1px solid rgba(255,255,255,.1);border-radius:var(--r-md);color:#fff;font-family:var(--font-ui);font-size:13px;outline:none">
-    </div>
-    <div id="user-list" style="max-height:240px;overflow-y:auto"></div>
-    <div id="user-list-empty" style="display:none;text-align:center;padding:16px;font-size:13px;color:rgba(255,255,255,.3)">Sin resultados</div>
+    <div style="font-size:11px;color:rgba(255,255,255,.3);text-align:center;margin-bottom:10px">Toca tu nombre para entrar a tu quiniela</div>
+    <div id="user-list" style="max-height:280px;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -781,14 +777,29 @@ async function registerUser(){
   const name = document.getElementById('reg-name').value.trim();
   const phone = document.getElementById('reg-phone').value.trim();
   if(!name){toast('Escribe tu nombre 👋'); return;}
+
   const btn = document.getElementById('btn-reg');
-  btn.disabled=true; btn.textContent='Registrando...';
+  btn.disabled=true; btn.textContent='Verificando...';
+
+  // Refresh user list so we catch anyone registered on other devices
+  await loadAll();
+
+  // Check if a user with this exact name (case-insensitive) already exists
+  const existing = allUsers.find(u => u.name.trim().toLowerCase() === name.toLowerCase());
+  if(existing){
+    btn.disabled=false; btn.textContent='Entrar a la quiniela →';
+    toast('👋 ¡Hola de nuevo, '+existing.name+'! Entrando a tu quiniela');
+    enterApp(existing);
+    return;
+  }
+
+  // New user
+  btn.textContent='Registrando...';
   const id = 'u_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
   const user = {id, name, phone, created_at: new Date().toISOString()};
   if(dbOk){
-    try{
-      await sb.from('sq26_users').insert([user]);
-    }catch(e){ console.warn('Insert user failed:', e); }
+    try{ await sb.from('sq26_users').insert([user]); }
+    catch(e){ console.warn('Insert user failed:', e); }
   }
   allUsers = allUsers.filter(u=>u.id!==id);
   allUsers.push(user);
@@ -815,13 +826,11 @@ async function enterApp(user){
 async function renderUserList(){
   await loadAll();
   const list = document.getElementById('user-list');
-  const empty = document.getElementById('user-list-empty');
   if(!list) return;
   const colors=['#C9A84C','#006847','#1E7FD8','#DA2128','#96761F','#00A066','#B08A2A','#243060'];
   const sorted = [...allUsers].sort((a,b)=>a.name.localeCompare(b.name));
   if(!sorted.length){
     list.innerHTML='<div style="text-align:center;padding:16px;font-size:13px;color:rgba(255,255,255,.3)">Sé el primero en registrarte 🏆</div>';
-    if(empty) empty.style.display='none';
     return;
   }
   list.innerHTML = sorted.map((u,i)=>{
@@ -837,25 +846,6 @@ async function renderUserList(){
       <div style="font-size:11px;color:var(--gold);opacity:.7">Entrar →</div>
     </div>`;
   }).join('');
-  // Apply any existing search query
-  const search = document.getElementById('user-search');
-  if(search && search.value) filterUserList(search.value);
-}
-
-function filterUserList(query){
-  const list = document.getElementById('user-list');
-  const empty = document.getElementById('user-list-empty');
-  if(!list) return;
-  const rows = list.querySelectorAll('.user-pill');
-  let visible = 0;
-  const q = query.toLowerCase().trim();
-  rows.forEach(r=>{
-    const name = r.getAttribute('data-name')||'';
-    const match = !q || name.includes(q);
-    r.style.display = match ? '' : 'none';
-    if(match) visible++;
-  });
-  if(empty) empty.style.display = rows.length > 0 && visible===0 && q ? 'block' : 'none';
 }
 
 function logout(){
@@ -865,8 +855,6 @@ function logout(){
   document.getElementById('screen-reg').classList.add('active');
   document.getElementById('reg-name').value='';
   document.getElementById('reg-phone').value='';
-  const search = document.getElementById('user-search');
-  if(search) search.value='';
   goTab('poll');
   renderUserList();
 }
