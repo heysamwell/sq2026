@@ -139,7 +139,7 @@ html,body{font-family:var(--font-ui);background:var(--navy);color:#fff;min-heigh
 /* Pick buttons */
 .pick-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
 /* Optional exact score input */
-.score-guess{display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 14px 2px;border-top:1px dashed rgba(255,255,255,.06)}
+.score-guess{display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 14px;border-top:1px dashed rgba(255,255,255,.06)}
 .score-guess-label{font-size:10px;color:rgba(255,255,255,.3);letter-spacing:.5px;text-transform:uppercase;white-space:nowrap}
 .score-guess-board{display:flex;align-items:center;gap:0;background:var(--navy);border:1px solid rgba(255,255,255,.1);border-radius:var(--r-md);overflow:hidden;flex-shrink:0}
 .score-guess-board input{width:40px;padding:8px 4px;text-align:center;background:transparent;border:none;color:var(--gold-light);font-family:var(--font-display);font-size:22px;outline:none;-moz-appearance:textfield}
@@ -148,10 +148,9 @@ html,body{font-family:var(--font-ui);background:var(--navy);color:#fff;min-heigh
 .score-guess-board input:focus{background:rgba(201,168,76,.07)}
 .score-guess-board input:disabled{color:rgba(255,255,255,.25)}
 .score-guess-divider{color:var(--gold);font-family:var(--font-display);font-size:20px;padding:0 4px;opacity:.5;user-select:none}
-.score-guess-teams{display:flex;align-items:center;justify-content:space-between;flex:1;gap:6px;min-width:0}
-.score-guess-team{font-size:11px;color:rgba(255,255,255,.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.score-guess-team.home{text-align:left}
-.score-guess-team.away{text-align:right}
+.score-guess-team{font-size:11px;color:rgba(255,255,255,.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.score-guess-team.home{text-align:right}
+.score-guess-team.away{text-align:left}
 /* View User Picks modal */
 .vup-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:flex-end;justify-content:center;z-index:2000}
 .vup-sheet{background:var(--navy-800);border-radius:var(--r-xl) var(--r-xl) 0 0;width:100%;max-width:600px;max-height:85vh;display:flex;flex-direction:column;border:1px solid rgba(201,168,76,.15);border-bottom:none}
@@ -968,16 +967,13 @@ function renderPoll(){
             ${pickBtn(m, 'V', p, res, played)}
           </div>
           <div class="score-guess">
-            <div class="score-guess-teams">
-              <span class="score-guess-team home">${esc(m.home)}</span>
-              <span class="score-guess-label">marcador exacto</span>
-              <span class="score-guess-team away">${esc(m.away)}</span>
-            </div>
+            <span class="score-guess-team home">${esc(m.home)}</span>
             <div class="score-guess-board">
               <input type="number" min="0" max="20" id="sg-h-${m.id}" value="${(picks['sg_'+m.id]||'').split('-')[0]||''}" placeholder="0" ${played||locked?'disabled':''} onchange="saveScoreGuess(${m.id})" oninput="if(this.value.length>1)this.value=this.value.slice(-1)">
               <span class="score-guess-divider">-</span>
               <input type="number" min="0" max="20" id="sg-a-${m.id}" value="${(picks['sg_'+m.id]||'').split('-')[1]||''}" placeholder="0" ${played||locked?'disabled':''} onchange="saveScoreGuess(${m.id})" oninput="if(this.value.length>1)this.value=this.value.slice(-1)">
             </div>
+            <span class="score-guess-team away">${esc(m.away)}</span>
           </div>
         </div>
       </div>`;
@@ -1324,29 +1320,7 @@ function checkPin(){
 
 async function renderAdminUsers(){
   await loadAll();
-  const list = document.getElementById('admin-users-list');
-  if(!allUsers.length){
-    list.innerHTML='<div style="font-size:13px;color:rgba(255,255,255,.3);padding:12px 0">Sin participantes registrados aún</div>';
-    return;
-  }
-  const sorted = [...allUsers].sort((a,b)=>a.name.localeCompare(b.name));
-  list.innerHTML = sorted.map(u=>{
-    const p = allPicks[u.id]||{};
-    const ans = MATCHES.filter(m=>p[m.id]).length;
-    const locked = !!p['_locked'];
-    const s = calcScore(p);
-    const isMe = currentUser && u.id===currentUser.id;
-    return `<div class="admin-user-row">
-      <div class="admin-user-info">
-        <div class="admin-user-name">${esc(u.name)}${isMe?' <span style="color:var(--gold);font-size:10px">(sesión activa)</span>':''}</div>
-        <div class="admin-user-meta">${u.phone||'Sin teléfono'} · ${ans}/51 picks · ${locked?'🔒 bloqueada':'✏️ sin bloquear'} · ${s.total} pts</div>
-      </div>
-      <div class="admin-user-actions">
-        <button class="btn-impersonate" onclick="impersonateUser('${u.id}')" title="Ver como este usuario">👁 Ver</button>
-        <button class="btn-delete-user" onclick="deleteUser('${u.id}','${esc(u.name)}')" title="Eliminar participante">🗑</button>
-      </div>
-    </div>`;
-  }).join('');
+  renderAdminUsersFromMemory();
 }
 
 async function impersonateUser(userId){
@@ -1359,21 +1333,56 @@ async function impersonateUser(userId){
 
 async function deleteUser(userId, userName){
   if(!confirm(`¿Eliminar a ${userName}?\n\nSe borrarán todos sus picks. Esta acción no se puede deshacer.`)) return;
-  // Remove locally
+
+  // 1. Remove from Supabase FIRST (before local state changes)
+  if(dbOk){
+    try{
+      const {error: e1} = await sb.from('sq26_picks').delete().eq('user_id', userId);
+      if(e1) console.warn('picks delete error:', e1);
+      const {error: e2} = await sb.from('sq26_users').delete().eq('id', userId);
+      if(e2) console.warn('users delete error:', e2);
+    }catch(e){ console.warn('Delete from DB exception:', e); }
+  }
+
+  // 2. Remove from local state
   allUsers = allUsers.filter(u=>u.id!==userId);
   delete allPicks[userId];
   localStorage.setItem('sq26_users', JSON.stringify(allUsers));
   localStorage.setItem('sq26_allpicks', JSON.stringify(allPicks));
-  // Remove from Supabase
-  if(dbOk){
-    try{
-      await sb.from('sq26_picks').delete().eq('user_id', userId);
-      await sb.from('sq26_users').delete().eq('id', userId);
-    }catch(e){ console.warn('Delete from DB failed:', e); }
-  }
+
+  // 3. Re-render WITHOUT calling loadAll (which would refetch from DB)
   toast('🗑 '+userName+' eliminado');
-  renderAdminUsers();
+  renderAdminUsersFromMemory();
   renderLB();
+}
+
+// Render admin users from current in-memory state (no DB reload)
+function renderAdminUsersFromMemory(){
+  const list = document.getElementById('admin-users-list');
+  if(!list) return;
+  const colors=['#C9A84C','#006847','#1E7FD8','#DA2128','#96761F','#00A066','#B08A2A','#243060'];
+  if(!allUsers.length){
+    list.innerHTML='<div style="font-size:13px;color:rgba(255,255,255,.3);padding:12px 0">Sin participantes registrados aún</div>';
+    return;
+  }
+  const sorted = [...allUsers].sort((a,b)=>a.name.localeCompare(b.name));
+  list.innerHTML = sorted.map((u,i)=>{
+    const p = allPicks[u.id]||{};
+    const ans = MATCHES.filter(m=>p[m.id]).length;
+    const isLocked = !!p['_locked'];
+    const isMe = currentUser && u.id===currentUser.id;
+    const s = calcScore(p);
+    return `<div class="admin-user-row">
+      <div class="admin-user-info">
+        <div class="admin-user-name">${esc(u.name)}${isMe?' <span style="color:var(--gold);font-size:10px">(sesión activa)</span>':''}</div>
+        <div class="admin-user-meta">${u.phone||'Sin teléfono'} · ${ans}/51 picks · ${isLocked?'🔒 bloqueada':'✏️ sin bloquear'} · ${s.total} pts</div>
+      </div>
+      <div class="admin-user-actions">
+        <button class="btn-impersonate" onclick="impersonateUser('${u.id}')">👁 Ver</button>
+        <button class="btn-delete-user" onclick="deleteUser('${u.id}','${esc(u.name)}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function renderAdmin(){
