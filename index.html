@@ -1039,6 +1039,17 @@ function saveScoreGuess(matchId){
     delete picks['sg_'+matchId];
   } else {
     picks['sg_'+matchId] = (h||'0')+'-'+(a||'0');
+    // Auto-select L/E/V based on score
+    if(h!=='' && a!==''){
+      const hg = parseInt(h), ag = parseInt(a);
+      const auto = hg > ag ? 'L' : hg < ag ? 'V' : 'E';
+      if(!picks[matchId] || picks[matchId] !== auto){
+        setPick(matchId, auto);
+        // Small visual feedback
+        const card = document.getElementById('mc-'+matchId);
+        if(card){ card.style.transition='box-shadow .2s'; card.style.boxShadow='0 0 0 2px rgba(201,168,76,.4)'; setTimeout(()=>card.style.boxShadow='',600); }
+      }
+    }
   }
   saveLocal();
 }
