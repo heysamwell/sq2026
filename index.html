@@ -461,14 +461,21 @@ html,body{font-family:var(--font-ui);background:var(--navy);color:#fff;min-heigh
         <div class="stat-card"><div class="stat-num" id="st-rem">51</div><div class="stat-lbl">Pendientes</div></div>
         <div class="stat-card"><div class="stat-num" id="st-pts">0</div><div class="stat-lbl">Pts posibles</div></div>
       </div>
+      <!-- Not locked: show save + lock when complete -->
       <div id="submit-btn-wrap">
-        <button class="btn-submit" id="btn-save" onclick="saveQuiniela()">
-          💾 Guardar en la nube
+        <button class="btn-submit" id="btn-save" onclick="saveQuiniela()" style="background:var(--navy-600);border:1px solid rgba(255,255,255,.15)">
+          💾 Guardar progreso
         </button>
-        <div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;margin-top:8px">Puedes editar tus picks mientras el partido no haya comenzado</div>
+        <button class="btn-submit" id="btn-lock" onclick="lockQuiniela()" style="display:none;margin-top:8px">
+          🔒 Enviar y bloquear quiniela
+        </button>
+        <div style="font-size:11px;color:rgba(255,255,255,.25);text-align:center;margin-top:8px" id="save-hint">
+          Guarda tu progreso en cualquier momento
+        </div>
       </div>
+      <!-- Locked -->
       <div class="saved-notice" id="saved-notice" style="display:none">
-        🔒 Quiniela enviada y bloqueada · Ya no puedes cambiar tus picks
+        🔒 Quiniela bloqueada · Contacta al admin si necesitas hacer cambios
       </div>
     </div>
   </div>
@@ -1072,6 +1079,7 @@ function populateTeamSelects(){
 function updateStats(){
   const ans = MATCHES.filter(m=>picks[m.id]).length;
   const rem = 51-ans;
+  const all = ans === 51;
   document.getElementById('prog-label').textContent = `${ans} / 51 respondidos`;
   document.getElementById('prog-pct').textContent = Math.round(ans/51*100)+'%';
   document.getElementById('prog-bar').style.width = (ans/51*100)+'%';
@@ -1079,67 +1087,77 @@ function updateStats(){
   document.getElementById('st-rem').textContent = rem;
   document.getElementById('st-pts').textContent = ans+10;
 
-  // Show/hide submit vs locked notice
   if(locked){
     document.getElementById('submit-btn-wrap').style.display='none';
     document.getElementById('saved-notice').style.display='block';
-    // Disable bonus selects
-    ['b-champ','b-sub','b-tri'].forEach(id=>{
-      const el = document.getElementById(id);
-      if(el) el.disabled = true;
-    });
+    ['b-champ','b-sub','b-tri'].forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=true; });
   } else {
     document.getElementById('submit-btn-wrap').style.display='block';
     document.getElementById('saved-notice').style.display='none';
+    // Show lock button only when all 51 answered
+    const btnLock = document.getElementById('btn-lock');
+    const hint = document.getElementById('save-hint');
+    if(btnLock){
+      btnLock.style.display = all ? 'block' : 'none';
+      if(hint) hint.textContent = all
+        ? '✅ Completaste los 51 partidos — puedes bloquear tu quiniela'
+        : `Guarda tu progreso en cualquier momento · Faltan ${rem}`;
+    }
   }
 }
 
 // ════════════════════════════════════════════════
-//  SAVE TO SUPABASE
+//  SAVE (no lock) + LOCK
 // ════════════════════════════════════════════════
 async function saveQuiniela(){
-  const ans = MATCHES.filter(m=>picks[m.id]).length;
-  if(ans < 1){ toast('Responde al menos un partido antes de enviar'); return; }
-
-  const confirmed = confirm(
-    `¿Confirmas tu quiniela?\n\n` +
-    `${ans} de 51 partidos respondidos.\n\n` +
-    `⚠️ Una vez enviada NO podrás cambiar tus picks.`
-  );
-  if(!confirmed) return;
-
   const btn = document.getElementById('btn-save');
   btn.disabled=true; btn.textContent='Guardando...';
+  saveLocal();
+  if(dbOk && currentUser){
+    try{
+      const rows = Object.entries(picks)
+        .filter(([k,v])=>v)
+        .map(([k,v])=>({user_id:currentUser.id, match_key:String(k), pick:String(v), updated_at:new Date().toISOString()}));
+      if(rows.length) await sb.from('sq26_picks').upsert(rows,{onConflict:'user_id,match_key'});
+      toast('💾 Progreso guardado');
+    }catch(e){ toast('⚠️ Error: '+e.message); }
+  } else {
+    toast('💾 Guardado localmente');
+  }
+  btn.disabled=false; btn.textContent='💾 Guardar progreso';
+}
 
-  // Mark as locked
+async function lockQuiniela(){
+  const ans = MATCHES.filter(m=>picks[m.id]).length;
+  if(ans < 51){ toast('Necesitas completar los 51 partidos para bloquear'); return; }
+  if(!confirm('¿Bloquear tu quiniela?\n\n51/51 partidos respondidos.\n\nDespués de esto no podrás cambiar tus picks a menos que el admin te desbloquee.')) return;
+
+  const btn = document.getElementById('btn-lock');
+  btn.disabled=true; btn.textContent='Bloqueando...';
+
   locked = true;
   picks['_locked'] = '1';
   localStorage.setItem('sq26_locked_'+currentUser.id, '1');
   saveLocal();
 
   if(dbOk && currentUser){
-    try {
-      const rows = Object.entries(picks).map(([k,v])=>({user_id:currentUser.id, match_key:String(k), pick:v, updated_at:new Date().toISOString()}));
-      if(rows.length){
-        await sb.from('sq26_picks').upsert(rows, {onConflict:'user_id,match_key'});
-      }
-      document.getElementById('submit-btn-wrap').style.display='none';
-      document.getElementById('saved-notice').style.display='block';
-      toast('✅ Quiniela enviada y bloqueada');
-    } catch(e){
-      toast('⚠️ Error al guardar: '+e.message);
-      locked = false;
-      picks['_locked'] = undefined;
+    try{
+      const rows = Object.entries(picks)
+        .filter(([k,v])=>v)
+        .map(([k,v])=>({user_id:currentUser.id, match_key:String(k), pick:String(v), updated_at:new Date().toISOString()}));
+      if(rows.length) await sb.from('sq26_picks').upsert(rows,{onConflict:'user_id,match_key'});
+      toast('🔒 Quiniela bloqueada');
+    }catch(e){
+      toast('⚠️ Error al bloquear: '+e.message);
+      locked=false; picks['_locked']=undefined;
       localStorage.removeItem('sq26_locked_'+currentUser.id);
-      console.error(e);
+      btn.disabled=false; btn.textContent='🔒 Enviar y bloquear quiniela';
+      return;
     }
   } else {
-    document.getElementById('submit-btn-wrap').style.display='none';
-    document.getElementById('saved-notice').style.display='block';
-    toast('💾 Quiniela bloqueada localmente (sin conexión)');
+    toast('🔒 Quiniela bloqueada localmente');
   }
-  btn.disabled=false;
-  // Re-render poll to show locked state on all buttons
+  updateStats();
   renderPoll();
 }
 
@@ -1342,6 +1360,34 @@ async function impersonateUser(userId){
   toast('👁 Viendo como: '+u.name);
 }
 
+async function unlockUser(userId, userName){
+  if(!confirm(`¿Desbloquear la quiniela de ${userName}?\n\nEl usuario podrá editar sus picks nuevamente.`)) return;
+
+  // Remove lock locally
+  if(allPicks[userId]){
+    delete allPicks[userId]['_locked'];
+    localStorage.setItem('sq26_allpicks', JSON.stringify(allPicks));
+    localStorage.removeItem('sq26_locked_'+userId);
+  }
+
+  // Remove from Supabase
+  if(dbOk){
+    try{
+      await sb.from('sq26_picks').delete().eq('user_id', userId).eq('match_key', '_locked');
+    }catch(e){ console.warn('Unlock DB error:', e); }
+  }
+
+  // If this is the current logged-in user, unlock their session too
+  if(currentUser && currentUser.id === userId){
+    locked = false;
+    updateStats();
+    renderPoll();
+  }
+
+  toast('🔓 '+userName+' desbloqueado — ya puede editar sus picks');
+  renderAdminUsersFromMemory();
+}
+
 async function deleteUser(userId, userName){
   if(!confirm(`¿Eliminar a ${userName}?\n\nSe borrarán todos sus picks. Esta acción no se puede deshacer.`)) return;
 
@@ -1390,6 +1436,7 @@ function renderAdminUsersFromMemory(){
       </div>
       <div class="admin-user-actions">
         <button class="btn-impersonate" onclick="impersonateUser('${u.id}')">👁 Ver</button>
+        ${isLocked?`<button class="btn-impersonate" onclick="unlockUser('${u.id}','${esc(u.name)}')" style="background:rgba(91,168,232,.12);border-color:rgba(91,168,232,.3);color:#5BA8E8">🔓 Unlock</button>`:''}
         <button class="btn-delete-user" onclick="deleteUser('${u.id}','${esc(u.name)}')">🗑</button>
       </div>
     </div>`;
