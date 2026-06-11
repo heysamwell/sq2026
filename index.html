@@ -138,6 +138,30 @@ html,body{font-family:var(--font-ui);background:var(--navy);color:#fff;min-heigh
 
 /* Pick buttons */
 .pick-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+/* Optional exact score input */
+.score-guess{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px dashed rgba(255,255,255,.06)}
+.score-guess-label{font-size:11px;color:rgba(255,255,255,.3)}
+.score-guess-inputs{display:flex;align-items:center;gap:6px}
+.score-guess-inputs input{width:38px;padding:5px;text-align:center;background:var(--navy);border:1px solid rgba(255,255,255,.12);border-radius:var(--r-sm);color:#fff;font-family:var(--font-display);font-size:18px;outline:none}
+.score-guess-inputs input:focus{border-color:var(--gold)}
+.score-guess-inputs input:disabled{opacity:.5}
+.score-guess-dash{color:rgba(255,255,255,.3);font-family:var(--font-display);font-size:16px}
+.score-guess-saved{font-size:11px;color:var(--green-light)}
+/* View User Picks modal */
+.vup-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:flex-end;justify-content:center;z-index:2000}
+.vup-sheet{background:var(--navy-800);border-radius:var(--r-xl) var(--r-xl) 0 0;width:100%;max-width:600px;max-height:85vh;display:flex;flex-direction:column;border:1px solid rgba(201,168,76,.15);border-bottom:none}
+.vup-header{padding:18px 20px 14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0}
+.vup-title{font-family:var(--font-display);font-size:24px;letter-spacing:1px;color:#fff}
+.vup-subtitle{font-size:12px;color:rgba(255,255,255,.45);margin-top:2px}
+.vup-close{background:rgba(255,255,255,.06);border:none;color:rgba(255,255,255,.6);width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px}
+.vup-close:hover{background:rgba(218,33,40,.15);color:var(--red-light)}
+.vup-body{padding:8px 20px 24px;overflow-y:auto}
+.vup-row{display:grid;grid-template-columns:1fr 32px 44px 28px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px}
+.vup-teams{color:rgba(255,255,255,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vup-pick{text-align:center;font-size:11px;font-weight:600;padding:2px 0;border-radius:var(--r-sm)}
+.vup-sg{text-align:center;font-family:var(--font-display);font-size:15px;color:var(--gold-light)}
+.vup-pts{text-align:right;font-family:var(--font-display);font-size:15px}
+.vup-bonus{text-align:right;font-size:12px;color:rgba(255,255,255,.7);grid-column:2 / 5}
 .pick-btn{padding:8px 4px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:var(--r-md);color:rgba(255,255,255,.45);font-family:var(--font-ui);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.3}
 .pick-btn .btn-label{font-size:10px;letter-spacing:.5px;text-transform:uppercase;opacity:.7}
 .pick-btn .btn-team{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px}
@@ -264,6 +288,20 @@ html,body{font-family:var(--font-ui);background:var(--navy);color:#fff;min-heigh
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- View User Picks Modal -->
+<div class="vup-modal" id="vup-modal" onclick="if(event.target===this)closeUserPicks()">
+  <div class="vup-sheet">
+    <div class="vup-header">
+      <div>
+        <div class="vup-title" id="vup-title">—</div>
+        <div class="vup-subtitle" id="vup-subtitle"></div>
+      </div>
+      <button class="vup-close" onclick="closeUserPicks()">✕</button>
+    </div>
+    <div class="vup-body" id="vup-body"></div>
+  </div>
+</div>
 
 <div class="app">
 
@@ -860,6 +898,14 @@ function renderPoll(){
             ${pickBtn(m, 'E', p, res, played)}
             ${pickBtn(m, 'V', p, res, played)}
           </div>
+          <div class="score-guess">
+            <span class="score-guess-label">Marcador exacto (opcional):</span>
+            <div class="score-guess-inputs">
+              <input type="number" min="0" max="20" id="sg-h-${m.id}" value="${(picks['sg_'+m.id]||'').split('-')[0]||''}" placeholder="-" ${played||locked?'disabled':''} onchange="saveScoreGuess(${m.id})" oninput="this.value=this.value.slice(0,2)">
+              <span class="score-guess-dash">-</span>
+              <input type="number" min="0" max="20" id="sg-a-${m.id}" value="${(picks['sg_'+m.id]||'').split('-')[1]||''}" placeholder="-" ${played||locked?'disabled':''} onchange="saveScoreGuess(${m.id})" oninput="this.value=this.value.slice(0,2)">
+            </div>
+          </div>
         </div>
       </div>`;
     });
@@ -914,6 +960,18 @@ function setPick(matchId, opt){
 function savePick(key, val){
   if(locked){ toast('🔒 Tu quiniela ya está enviada y no se puede editar'); return; }
   picks[key]=val; saveLocal();
+}
+
+function saveScoreGuess(matchId){
+  if(locked){ return; }
+  const h = document.getElementById('sg-h-'+matchId).value.trim();
+  const a = document.getElementById('sg-a-'+matchId).value.trim();
+  if(h==='' && a===''){
+    delete picks['sg_'+matchId];
+  } else {
+    picks['sg_'+matchId] = (h||'0')+'-'+(a||'0');
+  }
+  saveLocal();
 }
 
 function syncBonusSelects(){
@@ -1103,17 +1161,72 @@ function renderLB(filter=''){
     const isMe = currentUser && u.id===currentUser.id;
     const posClass = pos===1?'p1':pos===2?'p2':pos===3?'p3':'';
     const medal = pos===1?'🥇':pos===2?'🥈':pos===3?'🥉':pos;
-    return `<div class="lb-row${isMe?' is-me':''}" onclick="if(${isMe}) goTab('scorecard')">
+    const userLocked = !!(allPicks[u.id] && allPicks[u.id]['_locked']);
+    const lockIcon = userLocked ? '🔒' : '✏️';
+    return `<div class="lb-row${isMe?' is-me':''}" onclick="viewUserPicks('${u.id}')">
       <div class="lb-pos ${posClass}">${medal}</div>
       <div class="lb-av" style="background:${colors[i%colors.length]};color:${i<3?'#0A0E1A':'#fff'}">${initials(u.name)}</div>
       <div class="lb-info">
         <div class="lb-name">${esc(u.name)}${isMe?' <span style="font-size:10px;color:var(--gold);font-weight:400">(tú)</span>':''}</div>
-        <div class="lb-sub">${u.phone||''} · ${u.ans}/51 picks</div>
+        <div class="lb-sub">${lockIcon} ${u.ans}/51 · ${userLocked?'ver picks':'sin bloquear'}</div>
       </div>
       <div class="lb-answered">${u.ans}/51</div>
       <div class="lb-pts">${u.total}</div>
     </div>`;
   }).join('');
+}
+
+function viewUserPicks(userId){
+  const u = allUsers.find(x=>x.id===userId);
+  if(!u) return;
+  const isMe = currentUser && userId===currentUser.id;
+  const userPicks = allPicks[userId]||{};
+  const userLocked = !!userPicks['_locked'];
+
+  // If not locked and not me, can't see picks yet
+  if(!userLocked && !isMe){
+    toast('🔒 '+u.name+' aún no ha bloqueado su quiniela');
+    return;
+  }
+  if(isMe && !userLocked){
+    // It's me but not locked - go to my poll to keep editing
+    goTab('poll');
+    return;
+  }
+
+  const s = calcScore(userPicks);
+  let rows = '';
+  let lastJ = 0;
+  MATCHES.forEach(m=>{
+    if(m.j!==lastJ){ lastJ=m.j; rows+=`<div style="font-family:var(--font-display);font-size:13px;letter-spacing:1px;color:var(--gold);margin:14px 0 6px">JORNADA ${m.j}</div>`; }
+    const pk = userPicks[m.id]||'';
+    const sg = userPicks['sg_'+m.id]||'';
+    const r = results[m.id]||'';
+    const played = !!r;
+    let ptsCls='pts-pend', pts='—';
+    if(played){ if(pk===r){pts='+1';ptsCls='pts-ok';} else if(pk){pts='0';ptsCls='pts-bad';} }
+    rows += `<div class="vup-row">
+      <div class="vup-teams">${FLAGS[m.home]||''} ${esc(m.home)} <span style="opacity:.3">vs</span> ${FLAGS[m.away]||''} ${esc(m.away)}</div>
+      ${pk?`<div class="vup-pick pick-chip-${pk}">${pk}</div>`:'<div class="vup-pick" style="opacity:.3">—</div>'}
+      ${sg?`<div class="vup-sg">${sg}</div>`:'<div class="vup-sg" style="opacity:.25">·</div>'}
+      ${played?`<div class="vup-pts ${ptsCls}">${pts}</div>`:'<div class="vup-pts" style="opacity:.2">?</div>'}
+    </div>`;
+  });
+  // Bonus
+  const bonusRows = `
+    <div style="font-family:var(--font-display);font-size:13px;letter-spacing:1px;color:var(--gold);margin:14px 0 6px">BONUS</div>
+    <div class="vup-row"><div class="vup-teams">🏆 Campeón</div><div class="vup-bonus">${userPicks['b-champ']?(FLAGS[userPicks['b-champ']]||'')+' '+esc(userPicks['b-champ']):'—'}</div></div>
+    <div class="vup-row"><div class="vup-teams">🥈 Subcampeón</div><div class="vup-bonus">${userPicks['b-sub']?(FLAGS[userPicks['b-sub']]||'')+' '+esc(userPicks['b-sub']):'—'}</div></div>
+    <div class="vup-row"><div class="vup-teams">🇲🇽 Partidos del Tri</div><div class="vup-bonus">${userPicks['b-tri']?userPicks['b-tri']+' partidos':'—'}</div></div>`;
+
+  document.getElementById('vup-title').textContent = u.name;
+  document.getElementById('vup-subtitle').innerHTML = `${s.total} pts · ${s.correct} aciertos${isMe?' · <span style="color:var(--gold)">tu quiniela</span>':''}`;
+  document.getElementById('vup-body').innerHTML = rows + bonusRows;
+  document.getElementById('vup-modal').style.display='flex';
+}
+
+function closeUserPicks(){
+  document.getElementById('vup-modal').style.display='none';
 }
 
 // ════════════════════════════════════════════════
