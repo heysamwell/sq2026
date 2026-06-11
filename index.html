@@ -821,35 +821,41 @@ async function renderUserList(){
   const sorted = [...allUsers].sort((a,b)=>a.name.localeCompare(b.name));
   if(!sorted.length){
     list.innerHTML='<div style="text-align:center;padding:16px;font-size:13px;color:rgba(255,255,255,.3)">Sé el primero en registrarte 🏆</div>';
+    if(empty) empty.style.display='none';
     return;
   }
   list.innerHTML = sorted.map((u,i)=>{
     const p = allPicks[u.id]||{};
     const ans = MATCHES.filter(m=>p[m.id]).length;
-    const locked = !!p['_locked'];
-    return `<div class="user-pill" onclick="enterApp(${JSON.stringify(u).replace(/"/g,'&quot;')})">
+    const isLocked = !!p['_locked'];
+    return `<div class="user-pill" data-name="${esc(u.name.toLowerCase())}" onclick="enterApp(${JSON.stringify(u).replace(/"/g,'&quot;')})">
       <div style="width:34px;height:34px;border-radius:50%;background:${colors[i%colors.length]};color:${i<3?'#0A0E1A':'#fff'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0">${initials(u.name)}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:500;color:#fff">${esc(u.name)}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,.35)">${u.phone||''} · ${ans}/51 ${locked?'🔒':'✏️'}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.35)">${u.phone||''} · ${ans}/51 ${isLocked?'🔒':'✏️'}</div>
       </div>
       <div style="font-size:11px;color:var(--gold);opacity:.7">Entrar →</div>
     </div>`;
   }).join('');
+  // Apply any existing search query
+  const search = document.getElementById('user-search');
+  if(search && search.value) filterUserList(search.value);
 }
 
 function filterUserList(query){
   const list = document.getElementById('user-list');
   const empty = document.getElementById('user-list-empty');
+  if(!list) return;
   const rows = list.querySelectorAll('.user-pill');
   let visible = 0;
+  const q = query.toLowerCase().trim();
   rows.forEach(r=>{
-    const name = r.querySelector('div div')?.textContent?.toLowerCase()||'';
-    const match = !query || name.includes(query.toLowerCase());
+    const name = r.getAttribute('data-name')||'';
+    const match = !q || name.includes(q);
     r.style.display = match ? '' : 'none';
     if(match) visible++;
   });
-  if(empty) empty.style.display = visible===0 && query ? 'block' : 'none';
+  if(empty) empty.style.display = rows.length > 0 && visible===0 && q ? 'block' : 'none';
 }
 
 function logout(){
